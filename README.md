@@ -166,5 +166,4 @@ Usalo solo en entornos y objetivos donde tengas autorizacion explicita.
 
 ## Licencia
 
-MIT. Ver [LICENSE](LICENSE). El titular del copyright es un marcador; sustituyelo
-por tu nombre si lo publicas.
+MIT. Ver [LICENSE](LICENSE).

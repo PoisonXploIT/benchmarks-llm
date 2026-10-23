@@ -89,9 +89,9 @@ class TestEscritura(unittest.TestCase):
 class TestArgs(unittest.TestCase):
     def test_rutas_windows_no_se_rompen(self):
         args = orchestrator.split_extra_args(
-            '--mmproj C:\\Users\\Sammi\\AI\\models\\proj.gguf -ngl 999'
+            '--mmproj C:\\Users\\usuario\\AI\\models\\proj.gguf -ngl 999'
         )
-        self.assertEqual(args[1], "C:\\Users\\Sammi\\AI\\models\\proj.gguf")
+        self.assertEqual(args[1], "C:\\Users\\usuario\\AI\\models\\proj.gguf")
         self.assertEqual(args[2:], ["-ngl", "999"])
 
 

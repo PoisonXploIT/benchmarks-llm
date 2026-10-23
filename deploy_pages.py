@@ -12,20 +12,26 @@ Uso:
 Idempotente: si el proyecto existe, solo redeploya.
 """
 import argparse
-import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
-import zipfile
 from pathlib import Path
+
+# Solo se publican assets: nada de README, zips, workflows ni dotfiles.
+PUBLIC_SUFFIXES = {".html", ".js", ".css", ".json", ".svg", ".png", ".jpg",
+                   ".jpeg", ".webp", ".ico", ".woff", ".woff2", ".txt"}
 
 API = "https://api.cloudflare.com/client/v4"
 
 
-def api(token, path, method="GET", payload=None, raw=None, content_type="application/json"):
+def api(token, path, method="GET", payload=None, raw=None,
+        content_type="application/json", strict=True):
+    """Llamada a la API. Con strict=False devuelve el error en vez de abortar."""
     url = API + path
     data = raw if raw is not None else (json.dumps(payload).encode() if payload else None)
     req = urllib.request.Request(url, data=data, method=method)
@@ -37,16 +43,27 @@ def api(token, path, method="GET", payload=None, raw=None, content_type="applica
             return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
+        if not strict:
+            return {"__status": e.code, "success": False, "body": body[:400]}
         raise SystemExit(f"Cloudflare {e.code} en {path}: {body[:400]}")
 
 
-def zip_site(site_dir):
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in sorted(Path(site_dir).rglob("*")):
-            if p.is_file() and ".git" not in p.parts:
-                z.write(p, p.relative_to(site_dir).as_posix())
-    return buf.getvalue()
+def stage_site(site_dir):
+    """Copia a un directorio temporal solo los assets publicables del repo del sitio."""
+    src = Path(site_dir).resolve()
+    dst = Path(tempfile.mkdtemp(prefix="pages-stage-"))
+    for p in sorted(src.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(src)
+        if any(part.startswith(".") for part in rel.parts):
+            continue
+        if p.suffix.lower() not in PUBLIC_SUFFIXES:
+            continue
+        out = dst / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, out)
+    return dst
 
 
 def main():
@@ -58,7 +75,9 @@ def main():
     ap.add_argument("--domain", default="benchmarks.sammideblas.com")
     ap.add_argument("--access-email", default=None,
                     help="Restringir Access a un email concreto (por defecto: "
-                         "cualquier cuenta de GitHub)")
+                         "cualquier cuenta del IdP)")
+    ap.add_argument("--github-idp", default=None,
+                    help="UUID del IdP a exigir; por defecto se reutiliza el de otra app")
     ap.add_argument("--no-access", action="store_true", help="No crear la app de Access")
     ap.add_argument("--no-block-pages-dev", action="store_true",
                     help="No bloquear los subdominios *.pages.dev (por defecto SI se bloquean)")
@@ -78,70 +97,98 @@ def main():
                        "compatibility": {"enable_run_worker": False}})
         print("Proyecto creado:", created["result"]["name"])
 
-    blob = zip_site(args.site)
+    staged = stage_site(args.site)
+    print("staging:", staged, "|", len(list(staged.rglob("*"))), "entradas")
     # La API de subida directa exige multipart con manifest; wrangler lo hace bien.
-    upload = subprocess.run(
-        ["npx.cmd", "-y", "wrangler@4", "pages", "deploy", args.site,
-         f"--project-name={args.project}", f"--branch={args.branch}",
-         "--commit-dirty=true"],
-        env=dict(os.environ, WRANGLER_SEND_METRICS="false"),
-        capture_output=True, text=True, shell=False)
+    try:
+        upload = subprocess.run(
+            ["npx.cmd", "-y", "wrangler@4", "pages", "deploy", str(staged),
+             f"--project-name={args.project}", f"--branch={args.branch}",
+             "--commit-dirty=true"],
+            env=dict(os.environ, WRANGLER_SEND_METRICS="false"),
+            capture_output=True, text=True, shell=False)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
     out = ((upload.stdout or "") + (upload.stderr or "")).strip()
     print(out[-1200:])
     if upload.returncode != 0:
         sys.exit(f"wrangler fallo (codigo {upload.returncode})")
-    _ = blob
 
     doms = api(token, f"/accounts/{account}/pages/projects/{args.project}/domains")
-    existing = {d["domain"] for d in doms.get("result", [])}
+    existing = {d.get("name") or d.get("domain") for d in doms.get("result", [])}
     if args.domain not in existing:
         add = api(token, f"/accounts/{account}/pages/projects/{args.project}/domains",
-                  "POST", {"name": args.domain})
-        print("Dominio añadido:", add.get("result", {}).get("domain"))
+                  "POST", {"name": args.domain}, strict=False)
+        if add.get("success"):
+            print("Dominio añadido:", add.get("result", {}).get("name"))
+        else:
+            print("AVISO dominio:", json.dumps(add)[:300])
+        print("Comprueba el CNAME en la zona:",
+              f"{args.domain} -> <subdominio>.pages.dev (proxied)")
 
     if not args.no_access:
-        apps = api(token, f"/accounts/{account}/access/apps")
-        app = next((a for a in apps.get("result", []) if a.get("domain") == args.domain), None)
+        apps = api(token, f"/accounts/{account}/access/apps").get("result", [])
+        app = next((a for a in apps if a.get("domain") == args.domain), None)
+        idp = args.github_idp
+        if not idp:
+            # Reutiliza el IdP de otra app del mismo account (p. ej. sec.).
+            idp = next((a["allowed_idps"][0] for a in apps if a.get("allowed_idps")), None)
+        if args.access_email:
+            include = [{"email": {"email": args.access_email}}]
+        elif idp:
+            include = [{"login_method": {"id": idp}}]
+        else:
+            include = [{"everyone": {}}]
+
         if not app:
-            app = api(token, f"/accounts/{account}/access/apps", "POST",
-                      {"name": args.project, "domain": args.domain,
-                       "type": "self_hosted", "policy": "allow"})
-            print("App de Access creada:", app["result"]["domain"])
-        # Login solo con GitHub: sin magic link por email.
-        try:
-            api(token, f"/accounts/{account}/access/apps/{app['id']}", "PATCH",
-                {"allowed_login_methods": ["github"]})
-            print("Login restringido a GitHub.")
-        except SystemExit:
-            print("AVISO: el token no permite restringir el metodo de login por API. "
-                  "Hazlo en Zero Trust -> Access -> Apps -> <project> -> Settings -> "
-                  "Login methods: solo GitHub.")
+            created = api(token, f"/accounts/{account}/access/apps", "POST",
+                          {"name": args.project, "domain": args.domain,
+                           "type": "self_hosted", "session_duration": "24h",
+                           "policies": [{"name": "Autorizados", "decision": "allow",
+                                         "include": include}]})
+            if not created.get("success"):
+                sys.exit("no se pudo crear la app de Access: " + json.dumps(created)[:300])
+            app = created["result"]
+            print("App de Access creada:", app.get("domain"))
+
+        if idp:
+            upd = api(token, f"/accounts/{account}/access/apps/{app['id']}", "PUT",
+                      {"name": app.get("name") or args.project,
+                       "domain": args.domain, "type": "self_hosted",
+                       "session_duration": app.get("session_duration") or "24h",
+                       "allowed_idps": [idp], "auto_redirect_to_identity": True})
+            print("Login solo por IdP" if upd.get("success") else
+                  "AVISO: no se pudo fijar el IdP: " + json.dumps(upd)[:200],
+                  idp if upd.get("success") else "")
+        else:
+            print("AVISO: sin IdP detectado; configura login solo GitHub en el dashboard.")
+
         if args.access_email:
             pol = api(token, f"/accounts/{account}/access/apps/{app['id']}/policies", "POST",
-                      {"name": "Cuenta autorizada", "action": "allow", "scope": "bypass",
-                       "rules": [{"require": {"email": args.access_email}}]})
+                      {"name": "Cuenta autorizada", "decision": "allow",
+                       "include": [{"email": {"email": args.access_email}}]})
             print("Politica restrictiva:", pol.get("result", {}).get("name"))
-        else:
-            pol = api(token, f"/accounts/{account}/access/apps/{app['id']}/policies", "POST",
-                      {"name": "Cualquier cuenta de GitHub", "action": "allow",
-                       "scope": "bypass", "rules": []})
-            print("Politica: cualquier usuario autenticado con GitHub.")
 
     if not args.no_block_pages_dev:
-        for host in (f"{args.project}.pages.dev", f"preview-{args.project}.pages.dev"):
-            apps = api(token, f"/accounts/{account}/access/apps")
-            if any(a.get("domain") == host for a in apps.get("result", [])):
+        sub = api(token, f"/accounts/{account}/pages/projects/{args.project}")
+        subdomain = sub.get("result", {}).get("subdomain") or f"{args.project}.pages.dev"
+        for host in (subdomain, f"preview-{subdomain}"):
+            apps = api(token, f"/accounts/{account}/access/apps").get("result", [])
+            if any(a.get("domain") == host for a in apps):
                 print("Ya bloqueado:", host)
                 continue
-            try:
-                api(token, f"/accounts/{account}/access/apps", "POST",
-                    {"name": f"bloqueo-{host}", "domain": host, "type": "self_hosted",
-                     "policy": "deny"})
+            res = api(token, f"/accounts/{account}/access/apps", "POST",
+                      {"name": f"bloqueo-{host}", "domain": host,
+                       "type": "self_hosted",
+                       "policies": [{"name": "deny", "decision": "deny",
+                                     "include": [{"everyone": {}}]}]}, strict=False)
+            if res.get("success"):
                 print("Bloqueado (Access deny):", host)
-            except SystemExit as e:
-                print(f"AVISO: no se pudo bloquear {host}: {e}")
-                print("Alternativa manual: Zero Trust -> Access -> Apps -> nueva app "
-                      f"para {host} con politica Deny.")
+            elif "does not belong to zone" in json.dumps(res):
+                print(f"AVISO: {host} no admite app de Access (solo existe al desplegar). "
+                      "Si importa, desactiva preview deployments en Pages -> Settings.")
+            else:
+                print(f"AVISO: no se pudo bloquear {host}: {json.dumps(res)[:200]}")
 
     print("Hecho. Verifica en https://dash.cloudflare.com/")
 

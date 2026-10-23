@@ -1,0 +1,28 @@
+# Secretos: nunca versionar la clave de la API
+config.json
+config.json.bak*
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Logs y backups de desarrollo
+*.log
+*.bak
+
+# Streamlit
+.streamlit/secrets.toml
+run-params.json
+run-progress.json
+run.pid
+
+# Alias y registro de modelos descensurados: la correspondencia real no se sube a git
+model_aliases.json
+model_registry.json
+
+# Datos: el snapshot completo y el filtrado no se versionan
+data_snapshot/

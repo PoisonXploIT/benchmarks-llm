@@ -1,0 +1,13 @@
+{
+  "runs": [
+    {"agent": "researcher", "model": "Modelo-Ficticio-A", "test": "S1",
+     "domain": "Ciberseguridad", "durationSec": 12.3,
+     "exitCode": 0, "stopReason": "end", "thinkingLength": 150},
+    {"agent": "coder", "model": "Modelo-Ficticio-A", "test": "C1",
+     "domain": "Codigo", "durationSec": 8.1,
+     "exitCode": 0, "stopReason": "end", "thinkingLength": 90},
+    {"agent": "writer", "model": "Modelo-Ficticio-B", "test": "T1",
+     "domain": "Texto", "durationSec": 5.7,
+     "exitCode": 1, "stopReason": "timeout", "thinkingLength": 40}
+  ]
+}

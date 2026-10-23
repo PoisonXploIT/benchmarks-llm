@@ -1,0 +1,18 @@
+{
+  "data_root": "C:\\ruta\\a\\tu\\carpeta\\de\\benchmarks",
+  "site_repo": "C:\\ruta\\a\\tu\\repo\\del\\sitio",
+  "cloud": {
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "api_key": ""
+  },
+  "llama": {
+    "server_exe": "llama-server",
+    "gguf_dir": "",
+    "gguf": "",
+    "port": 8120,
+    "ctx_size": 16384,
+    "extra_args": ""
+  },
+  "allow_local_cloud": false
+}

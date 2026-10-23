@@ -1,0 +1,45 @@
+[server]
+address = "127.0.0.1"
+headless = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Sin Deploy/Rerun/Clear cache en una app local: menos ruido y menos superficie
+toolbarMode = "minimal"
+
+# Las dos variantes (light y dark) estan definidas: el usuario cambia de tema
+# en el menu (Settings > Theme) o sigue la preferencia del sistema.
+# Definir solo [theme] bloquearia el cambio a modo oscuro.
+[theme]
+baseRadius = "0.5rem"
+
+[theme.light]
+primaryColor = "#1d4ed8"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f2f5f9"
+textColor = "#111827"
+borderColor = "#c8d2de"
+linkColor = "#1d4ed8"
+codeTextColor = "#111827"
+codeBackgroundColor = "#f2f5f9"
+grayColor = "#4b5563"
+# Heatmaps y graficas: escala azul legible sobre fondo claro
+chartSequentialColors = ["#f2f5f9", "#dbe6f3", "#b7cfe6", "#8fb4d8", "#6a98c4", "#4779a8", "#2f5b8a", "#1d4ed8", "#143a72", "#0b2549"]
+chartCategoricalColors = ["#1d4ed8", "#0f766e", "#b45309", "#7c3aed", "#b91c1c", "#475569", "#14797f"]
+
+[theme.dark]
+primaryColor = "#60a5fa"
+backgroundColor = "#0f1419"
+secondaryBackgroundColor = "#1b2229"
+textColor = "#e6edf3"
+borderColor = "#3a4552"
+linkColor = "#60a5fa"
+codeTextColor = "#e6edf3"
+codeBackgroundColor = "#1b2229"
+grayColor = "#93a1af"
+# Escala invertida: oscura en el extremo bajo, brillante en el alto
+chartSequentialColors = ["#0f1419", "#16202a", "#1d2c39", "#25394a", "#31475c", "#415972", "#5b7794", "#7fa3c4", "#a8c8e4", "#d6e7f5"]
+chartCategoricalColors = ["#60a5fa", "#2dd4bf", "#f59e0b", "#a78bfa", "#f87171", "#94a3b8", "#34d399"]

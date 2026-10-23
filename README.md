@@ -48,8 +48,8 @@ pip install -r requirements.txt
 ```
 
 `requirements.lock` es el freeze exacto del entorno que ejecuta la app
-(`C:\Users\Sammi\.venvs\benchmarks`): usalo si quieres reproducir el entorno
-preciso.
+(`.venvs\benchmarks` en la maquina de referencia): usalo si quieres reproducir el
+entorno preciso.
 
 ## Ejecucion
 
@@ -60,7 +60,7 @@ streamlit run app.py
 Abre http://localhost:8501. Con el venv existente:
 
 ```powershell
-& "C:\Users\Sammi\.venvs\benchmarks\Scripts\python.exe" -m streamlit run app.py --server.port 8501
+& ".venvs\benchmarks\Scripts\python.exe" -m streamlit run app.py --server.port 8501
 ```
 
 ## Datos
@@ -69,11 +69,10 @@ La app lee la **raiz de datos**, resuelta en este orden (ver `paths.py`):
 
 1. La variable de entorno `OQ_DATA_ROOT`, si esta definida.
 2. La clave `data_root` de `config.json`.
-3. El default del vault: `C:\Users\Sammi\Documents\Destino\40-IA\ENTORNOS-IA\BENCHMARKS`.
+3. Un directorio `data/` junto al repo, si no defines nada.
 
-El repo esta fuera del vault (`C:\Users\Sammi\AI\benchmarks-llm`) y los informes
-siguen en Obsidian. Si la raiz no existe, el dashboard lo dice explicitamente en
-vez de mostrar secciones vacias.
+La raiz de datos vive fuera del repo y los informes siguen en Obsidian. Si la raiz
+no existe, el dashboard lo dice explicitamente en vez de mostrar secciones vacias.
 
 Para probar la app con los datos ficticios incluidos en `examples/`:
 
@@ -87,8 +86,8 @@ OQ_DATA_ROOT=examples streamlit run app.py
 ```
 
 Sin datos la app arranca igual y avisa de que la raiz no existe. El formato exacto
-de cada fichero esta documentado en
-`C:\Users\Sammi\Documents\Destino\40-IA\PROYECTOS\BENCHMARKS-LLM\DATA-FORMATOS.md`.
+de cada fichero esta documentado en la nota `DATA-FORMATOS.md` del vault del
+proyecto (no viaja en este repo).
 
 ## Pruebas
 

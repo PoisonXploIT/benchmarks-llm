@@ -5,7 +5,7 @@ Requiere en el entorno:
     CLOUDFLARE_ACCOUNT_ID
 
 Uso:
-    python deploy_pages.py --site C:\\Users\\Sammi\\AI\\benchmarks-site \
+    python deploy_pages.py --site ../benchmarks-site \
         --project benchmarks --domain benchmarks.sammideblas.com \
         --access-email tu@email.com
 
@@ -50,7 +50,7 @@ def zip_site(site_dir):
 
 def main():
     ap = argparse.ArgumentParser(description="Deploy del sitio a Cloudflare Pages")
-    ap.add_argument("--site", default="C:\\Users\\Sammi\\AI\\benchmarks-site")
+    ap.add_argument("--site", default=os.environ.get("BM_SITE_REPO", "../benchmarks-site"))
     ap.add_argument("--project", default="benchmarks")
     ap.add_argument("--domain", default="benchmarks.sammideblas.com")
     ap.add_argument("--access-email", default=None,

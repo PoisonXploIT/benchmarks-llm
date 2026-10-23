@@ -24,12 +24,12 @@ REG = {
     "no_alias": [{"regex": r"(?i)(?:^|[-_])ud(?:[-_]|$)"}],
     "artifacts": ["Len (tok)", "Nota"],
     "max_string_len": 200,
-    "veto": [r"C:\\Users\\Sammi", r"http://", r"localhost", r"\.gguf"],
+    "veto": [r"C:\\Users\\usuario", r"http://", r"localhost", r"\.gguf"],
 }
 
 PAYLOAD = {
     "generated_at": "2026-10-23T00:00:00+00:00",
-    "data_root": "C:\\Users\\Sammi\\Documents\\Destino\\40-IA\\ENTORNOS-IA\\BENCHMARKS",
+    "data_root": "C:\\Users\\usuario\\Documents\\Vault\\BENCHMARKS",
     "censura": [
         {
             "server": "Qwen3.8-27B-OBLITERATED-Q2_K",

@@ -26,3 +26,6 @@ model_registry.json
 
 # Datos: el snapshot completo y el filtrado no se versionan
 data_snapshot/
+
+# estado local de wrangler (deploys)
+.wrangler/

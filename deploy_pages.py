@@ -15,6 +15,7 @@ import argparse
 import io
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -52,6 +53,8 @@ def main():
     ap = argparse.ArgumentParser(description="Deploy del sitio a Cloudflare Pages")
     ap.add_argument("--site", default=os.environ.get("BM_SITE_REPO", "../benchmarks-site"))
     ap.add_argument("--project", default="benchmarks")
+    ap.add_argument("--branch", default="master",
+                    help="Rama de produccion del proyecto Pages")
     ap.add_argument("--domain", default="benchmarks.sammideblas.com")
     ap.add_argument("--access-email", default=None,
                     help="Restringir Access a un email concreto (por defecto: "
@@ -71,20 +74,29 @@ def main():
     if args.project not in names:
         created = api(token, f"/accounts/{account}/pages/projects", "POST",
                       {"name": args.project,
+                       "production_branch": args.branch,
                        "compatibility": {"enable_run_worker": False}})
         print("Proyecto creado:", created["result"]["name"])
 
     blob = zip_site(args.site)
-    dep = api(token, f"/accounts/{account}/pages/projects/{args.project}/deployments",
-              "POST", raw=blob, content_type="application/zip")
-    r = dep.get("result", {})
-    print("Deploy:", r.get("url"), "| status:", r.get("status"))
+    # La API de subida directa exige multipart con manifest; wrangler lo hace bien.
+    upload = subprocess.run(
+        ["npx.cmd", "-y", "wrangler@4", "pages", "deploy", args.site,
+         f"--project-name={args.project}", f"--branch={args.branch}",
+         "--commit-dirty=true"],
+        env=dict(os.environ, WRANGLER_SEND_METRICS="false"),
+        capture_output=True, text=True, shell=False)
+    out = ((upload.stdout or "") + (upload.stderr or "")).strip()
+    print(out[-1200:])
+    if upload.returncode != 0:
+        sys.exit(f"wrangler fallo (codigo {upload.returncode})")
+    _ = blob
 
     doms = api(token, f"/accounts/{account}/pages/projects/{args.project}/domains")
     existing = {d["domain"] for d in doms.get("result", [])}
     if args.domain not in existing:
         add = api(token, f"/accounts/{account}/pages/projects/{args.project}/domains",
-                  "POST", {"domain": args.domain})
+                  "POST", {"name": args.domain})
         print("Dominio añadido:", add.get("result", {}).get("domain"))
 
     if not args.no_access:

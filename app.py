@@ -835,8 +835,9 @@ def page_raw():
 
 def page_publicar():
     st.header("Publicar datos")
-    st.info("Esta pagina solo existe en la version local. El sitio publico no lleva app: "
-           "se sirve un data.json filtrado desde un repo aparte.")
+    st.info("Pagina local. Regenera data.json desde el vault, lo filtra, lo audita y lo "
+           "publica: commit + push al repo privado y subida directa a Cloudflare Pages "
+           "con deploy_pages.py. No depende de GitHub Actions.")
     cfg_path = Path(__file__).resolve().parent / "config.json"
     cfg = json.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
     site = cfg.get("site_repo")
@@ -851,13 +852,43 @@ def page_publicar():
         st.error(str(e))
         return
     diff = publish.make_diff(publish.load_prev(site), clean)
-    st.write("Modelos publicados:", len(publish.model_set(clean)))
-    st.write("Filas:", publish.summary(clean))
-    st.write("Campos recortados por el filtrado:", len(dropped))
+    c1, c2 = st.columns(2)
+    c1.metric("Modelos publicados", len(publish.model_set(clean)))
+    c2.metric("Campos recortados", len(dropped))
+    st.write(publish.summary(clean))
     st.json(diff)
-    if st.button("Publicar (commit + push a Pages)", type="primary"):
-        commit = publish.git_publish(site, "datos filtrados")
-        st.success(f"Publicado. Commit: {commit}. Pages redeploya en 1-2 minutos.")
+
+    if st.button("Publicar ahora (commit + push + deploy)", type="primary"):
+        with st.status("Publicando", expanded=True) as status:
+            st.write("Filtrando y auditando los datos del vault...")
+            try:
+                res = publish.publish_site(site, clean=clean, diff=diff)
+            except SystemExit as e:
+                status.update(label="Abortado por el filtro", state="error")
+                st.error(str(e))
+                return
+            if res.get("error"):
+                status.update(label="Error de git", state="error")
+                st.error(res["error"])
+                return
+            if not res["changed"]:
+                status.update(label="Sin cambios", state="complete")
+                st.info("data.json sale identico al publicado: no se ha hecho commit "
+                        "ni deploy. Lanza un benchmark nuevo y vuelve a intentarlo.")
+                return
+            st.write("Commit:", res["commit"])
+            st.write("Deploy a Cloudflare Pages:",
+                     "correcto" if res["deploy_ok"] else "fallido")
+            if res["deploy_log"]:
+                st.code(res["deploy_log"][-1800:], language="text")
+            if res["deploy_ok"]:
+                status.update(label="Publicado", state="complete")
+                st.success("Sitio actualizado: https://benchmarks.sammideblas.com/")
+            else:
+                status.update(label="Commit hecho, deploy fallido", state="error")
+                st.error("El commit subio pero el sitio no se ha actualizado. Revisa el "
+                         "log de arriba; el deploy se puede repetir con "
+                         "`python deploy_pages.py`.")
 
 
 pages = [

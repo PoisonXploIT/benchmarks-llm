@@ -1,7 +1,11 @@
 """Regenera, filtra, compara y publica el sitio de datos (Cloudflare Pages).
 
 Flujo: vault -> payload -> sanitizer -> auditoria -> diff -> confirmacion ->
-git commit + push en el repo del sitio. Pages redeploya solo al recibir el push.
+git commit + push en el repo del sitio -> deploy con `deploy_pages.py` (wrangler).
+
+Ojo: el `git push` NO despliega. El proyecto de Pages no tiene integracion Git
+activa y su workflow de Actions no tiene secrets; el sitio se publica con la
+subida directa de `deploy_pages.py`.
 
 Uso:
     python publish.py --dry-run      # solo informe, no escribe nada
@@ -111,6 +115,63 @@ def git_publish(site_dir, message):
                           capture_output=True, text=True).stdout.strip()
 
 
+def strip_generated(d):
+    """Copia del payload sin la marca de tiempo (para comparar)."""
+    if d is None:
+        return None
+    return {k: v for k, v in d.items() if k != "generated_at"}
+
+
+def deploy_site(site):
+    """Sube el sitio con deploy_pages.py. Devuelve (ok, salida)."""
+    r = subprocess.run(
+        [sys.executable, str(REPO / "deploy_pages.py"),
+         "--site", str(site), "--project", "benchmarks",
+         "--domain", "benchmarks.sammideblas.com", "--branch", "master"],
+        capture_output=True, text=True)
+    ok = r.returncode == 0
+    return ok, (((r.stdout or "") + (r.stderr or "")).strip())
+
+
+def publish_site(site, clean=None, diff=None, message=None):
+    """Publica de verdad: escribe data.json, commit+push y deploy directo.
+
+    Devuelve changed, commit, deploy_ok, deploy_log y error. No propaga fallos
+    esperables (git, red, token): los reporta en el dict.
+    """
+    site = Path(site)
+    res = {"changed": False, "commit": None, "deploy_ok": None,
+           "deploy_log": "", "error": None, "diff": diff}
+    if clean is None:
+        reg = sanitizer.load_registry()
+        clean, _ = build_public(reg)
+    prev = load_prev(site)
+    if diff is None:
+        diff = make_diff(prev, clean)
+    res["diff"] = diff
+    res["summary"] = summary(clean)
+
+    if prev is not None and strip_generated(prev) == strip_generated(clean):
+        return res
+
+    out = site / "data.json"
+    out.write_text(json.dumps(clean, ensure_ascii=False), encoding="utf-8")
+    msg = message or (
+        f"datos {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC, "
+        f"{summary(clean)['modelos']} modelos")
+    try:
+        res["commit"] = git_publish(site, msg)
+    except SystemExit as e:
+        res["error"] = str(e)
+        return res
+    res["changed"] = True
+
+    ok, log = deploy_site(site)
+    res["deploy_ok"] = ok
+    res["deploy_log"] = log[-3000:]
+    return res
+
+
 def main():
     ap = argparse.ArgumentParser(description="Publicar datos filtrados a Pages")
     ap.add_argument("--dry-run", action="store_true", help="Solo informe, no escribe")
@@ -146,20 +207,15 @@ def main():
             print("Cancelado. Nada se escribio en el repo del sitio.")
             return
 
-    out = site / "data.json"
-    out.write_text(json.dumps(clean, ensure_ascii=False), encoding="utf-8")
-    msg = f"datos {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC, " \
-          f"{summary(clean)['modelos']} modelos"
-    commit = git_publish(site, msg)
-    print("Publicado. Commit:", commit)
-    if os.environ.get("CLOUDFLARE_API_TOKEN") and os.environ.get("CLOUDFLARE_ACCOUNT_ID"):
-        r = subprocess.run([sys.executable, str(REPO / "deploy_pages.py"),
-                            "--site", str(site), "--project", "benchmarks"],
-                           capture_output=True, text=True)
-        print(r.stdout.strip() or r.stderr.strip())
-    else:
-        print("Sin CLOUDFLARE_API_TOKEN: se asume integracion Git de Pages, "
-              "el push redeploya solo.")
+    res = publish_site(site, clean=clean, diff=diff)
+    if res.get("error"):
+        sys.exit(res["error"])
+    if not res["changed"]:
+        print("Sin cambios en data.json: no se publica nada.")
+        return
+    print("Commit:", res["commit"])
+    print("Deploy:", "OK" if res["deploy_ok"] else "FALLIDO")
+    print(res["deploy_log"])
 
 
 if __name__ == "__main__":

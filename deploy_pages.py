@@ -48,6 +48,34 @@ def api(token, path, method="GET", payload=None, raw=None,
         raise SystemExit(f"Cloudflare {e.code} en {path}: {body[:400]}")
 
 
+def credentials():
+    """Token y cuenta. Manda el registro de Windows; el entorno como respaldo.
+
+    Streamlit y otras apps arrastran el entorno del momento en que se lanzaron,
+    asi que un `setx` posterior no les llega y desplegarian con un token viejo.
+    En Linux/CI no hay registro y se usa el entorno.
+    """
+    reg = {}
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            i = 0
+            while True:
+                try:
+                    name, value, _ = winreg.EnumValue(k, i)
+                except OSError:
+                    break
+                if name in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+                    reg[name] = value
+                i += 1
+    except (ImportError, OSError):
+        pass
+    token = reg.get("CLOUDFLARE_API_TOKEN") or os.environ.get("CLOUDFLARE_API_TOKEN")
+    account = reg.get("CLOUDFLARE_ACCOUNT_ID") or os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    return token, account
+
+
 def stage_site(site_dir):
     """Copia a un directorio temporal solo los assets publicables del repo del sitio."""
     src = Path(site_dir).resolve()
@@ -83,10 +111,10 @@ def main():
                     help="No bloquear los subdominios *.pages.dev (por defecto SI se bloquean)")
     args = ap.parse_args()
 
-    token = os.environ.get("CLOUDFLARE_API_TOKEN")
-    account = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    token, account = credentials()
     if not token or not account:
-        sys.exit("Faltan CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID en el entorno.")
+        sys.exit("Faltan CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID "
+                 "(entorno o HKCU\\Environment).")
 
     projects = api(token, f"/accounts/{account}/pages/projects")
     names = [p["name"] for p in projects.get("result", [])]
@@ -105,7 +133,9 @@ def main():
             ["npx.cmd", "-y", "wrangler@4", "pages", "deploy", str(staged),
              f"--project-name={args.project}", f"--branch={args.branch}",
              "--commit-dirty=true"],
-            env=dict(os.environ, WRANGLER_SEND_METRICS="false"),
+            env=dict(os.environ, WRANGLER_SEND_METRICS="false",
+                     CLOUDFLARE_API_TOKEN=token,
+                     CLOUDFLARE_ACCOUNT_ID=account),
             capture_output=True, text=True, shell=False)
     finally:
         shutil.rmtree(staged, ignore_errors=True)
